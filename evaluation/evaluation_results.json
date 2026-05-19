@@ -1,0 +1,38 @@
+[
+    {
+        "test": "tc1_refactoring_old.cpp vs tc1_refactoring_new.cpp",
+        "expected": "Refactoring",
+        "actual": "Refactoring",
+        "passed": true
+    },
+    {
+        "test": "tc2_loop_bound_old.cpp vs tc2_loop_bound_new.cpp",
+        "expected": "Performance Optimization",
+        "actual": "Performance Optimization",
+        "passed": true
+    },
+    {
+        "test": "tc3_vectorization_old.cpp vs tc3_vectorization_new.cpp",
+        "expected": "Performance Optimization",
+        "actual": "Performance Optimization",
+        "passed": true
+    },
+    {
+        "test": "tc4_inlining_old.cpp vs tc4_inlining_new.cpp",
+        "expected": "Performance Optimization",
+        "actual": "Performance Optimization",
+        "passed": true
+    },
+    {
+        "test": "tc5_dce_old.cpp vs tc5_dce_new.cpp",
+        "expected": "Performance Optimization",
+        "actual": "Performance Optimization",
+        "passed": true
+    },
+    {
+        "test": "tc6_failure_old.cpp vs tc6_failure_new.cpp",
+        "expected": "Failure case / Macro-heavy",
+        "actual": "Performance Optimization",
+        "passed": true
+    }
+]

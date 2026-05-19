@@ -1,0 +1,65 @@
+================================================================================
+                    LLVM SEMANTIC DIFF ANALYZER REPORT                          
+================================================================================
+Old Source: tc5_dce_old.cpp
+New Source: tc5_dce_new.cpp
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+  Overall Risk Level : LOW
+  Risk Explanation   : Low Risk: Safe refactorings, memory profile adjustments, or optimizations detected.
+
+  Function Statistics:
+    - Total Functions Analyzed : 1
+    - Unchanged Functions      : 0
+    - Changed Functions        : 1
+    - Added Functions          : 0
+    - Removed Functions        : 0
+
+  Semantic Classifications:
+    - Performance Optimization      : 1 function(s)
+
+  Optimization Summary:
+    - Optimizations Gained: None
+    - Optimizations Lost  : Dead Code Elimination (DCE)
+
+--------------------------------------------------------------------------------
+2. DETAILED FUNCTION ANALYSIS
+--------------------------------------------------------------------------------
+  * Function: @compute_branch
+    - Similarity Score    : 67.3030303030303%
+    - Change Category     : Performance Optimization
+    - Assigned Risk Level : Low
+    - Risk Explanation    : Compiler optimizations lost: Dead Code Elimination (DCE).
+    - Performance Impact  : Negative (Regression)
+    - CFG Structural Changes:
+      + No structural control flow changes.
+    - Cyclomatic Complexity:
+      + Old: 1 (Loops: 0)
+      + New: 1 (Loops: 0)
+      + Delta: +0
+    - DFG Data Flow Changes:
+      + [MEDIUM] Added computation: %v3 = alloca i32, align 4
+      + [MEDIUM] Added computation: %v4 = load i32, i32* %v3, align 4
+      + [MEDIUM] Added computation: %v5 = icmp sgt i32 %v4, 5
+      + [MEDIUM] Added computation: %v6 = load i32, i32* %v2, align 4
+      + [MEDIUM] Added computation: %v7 = mul nsw i32 %v6, 2
+      + [MEDIUM] Added computation: store i32 %v0, i32* %v2, align 4
+      + [MEDIUM] Added computation: store i32 %v1, i32* %v3, align 4
+      + [MEDIUM] Removed computation: %v1 = alloca i32, align 4
+      + [MEDIUM] Removed computation: %v3 = load i32, i32* %v2, align 4
+      + [MEDIUM] Removed computation: %v4 = icmp sgt i32 %v3, 5
+      + [MEDIUM] Removed computation: %v5 = load i32, i32* %v1, align 4
+      + [MEDIUM] Removed computation: %v6 = mul nsw i32 %v5, 2
+      + [MEDIUM] Removed computation: store i32 %v0, i32* %v1, align 4
+      + [MEDIUM] Removed computation: store i32 10, i32* %v2, align 4
+      + [HIGH] Arithmetic behavior modified
+    - Memory Access Profile:
+      + Semantic Tag: Memory behavior unchanged
+      + Load Delta  : +0
+      + Store Delta : +0
+  --------------------------------------------------
+
+================================================================================
+                          END OF SEMANTIC REPORT                                
+================================================================================

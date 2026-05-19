@@ -1,0 +1,87 @@
+================================================================================
+                    LLVM SEMANTIC DIFF ANALYZER REPORT                          
+================================================================================
+Old Source: tc2_loop_bound_old.cpp
+New Source: tc2_loop_bound_new.cpp
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+  Overall Risk Level : LOW
+  Risk Explanation   : Low Risk: Safe refactorings, memory profile adjustments, or optimizations detected.
+
+  Function Statistics:
+    - Total Functions Analyzed : 1
+    - Unchanged Functions      : 0
+    - Changed Functions        : 1
+    - Added Functions          : 0
+    - Removed Functions        : 0
+
+  Semantic Classifications:
+    - Performance Optimization      : 1 function(s)
+
+  Optimization Summary:
+    - Optimizations Gained: Dead Code Elimination (DCE), Constant Folding
+    - Optimizations Lost  : Loop Unrolling
+
+--------------------------------------------------------------------------------
+2. DETAILED FUNCTION ANALYSIS
+--------------------------------------------------------------------------------
+  * Function: @compute_loop
+    - Similarity Score    : 51.606334841628964%
+    - Change Category     : Performance Optimization
+    - Assigned Risk Level : Low
+    - Risk Explanation    : Compiler optimizations gained: Dead Code Elimination (DCE), Constant Folding.
+    - Performance Impact  : Positive (Speedup)
+    - CFG Structural Changes:
+      + No structural control flow changes.
+    - Cyclomatic Complexity:
+      + Old: 2 (Loops: 1)
+      + New: 2 (Loops: 1)
+      + Delta: +0
+    - DFG Data Flow Changes:
+      + [MEDIUM] Added computation: %v11 = load i32, i32* %v10, align 4
+      + [MEDIUM] Added computation: %v12 = mul nsw i32 %v11, 2
+      + [MEDIUM] Added computation: %v13 = load i32, i32* %v4, align 4
+      + [MEDIUM] Added computation: %v14 = load i32, i32* %v3, align 4
+      + [MEDIUM] Added computation: %v15 = icmp slt i32 %v13, %v14
+      + [MEDIUM] Added computation: %v16 = load i32, i32* %v4, align 4
+      + [MEDIUM] Added computation: %v17 = add nsw i32 %v16, 1
+      + [MEDIUM] Added computation: %v2 = alloca i32*, align 8
+      + [MEDIUM] Added computation: %v3 = alloca i32, align 4
+      + [MEDIUM] Added computation: %v4 = alloca i32, align 4
+      + [MEDIUM] Added computation: %v5 = load i32, i32* %v4, align 4
+      + [MEDIUM] Added computation: %v6 = load i32*, i32** %v2, align 8
+      + [MEDIUM] Added computation: %v8 = load i32, i32* %v4, align 4
+      + [MEDIUM] Added computation: %v9 = load i32*, i32** %v2, align 8
+      + [MEDIUM] Added computation: store i32 %v1, i32* %v3, align 4
+      + [MEDIUM] Added computation: store i32 %v12, i32* %v7, align 4
+      + [MEDIUM] Added computation: store i32 %v17, i32* %v4, align 4
+      + [MEDIUM] Added computation: store i32 0, i32* %v4, align 4
+      + [MEDIUM] Added computation: store i32* %v0, i32** %v2, align 8
+      + [MEDIUM] Removed computation: %v1 = alloca i32*, align 8
+      + [MEDIUM] Removed computation: %v10 = mul nsw i32 %v9, 2
+      + [MEDIUM] Removed computation: %v11 = load i32, i32* %v2, align 4
+      + [MEDIUM] Removed computation: %v12 = icmp slt i32 %v11, 4
+      + [MEDIUM] Removed computation: %v13 = load i32, i32* %v2, align 4
+      + [MEDIUM] Removed computation: %v14 = add nsw i32 %v13, 1
+      + [MEDIUM] Removed computation: %v2 = alloca i32, align 4
+      + [MEDIUM] Removed computation: %v3 = load i32, i32* %v2, align 4
+      + [MEDIUM] Removed computation: %v4 = load i32*, i32** %v1, align 8
+      + [MEDIUM] Removed computation: %v6 = load i32, i32* %v2, align 4
+      + [MEDIUM] Removed computation: %v7 = load i32*, i32** %v1, align 8
+      + [MEDIUM] Removed computation: %v9 = load i32, i32* %v8, align 4
+      + [MEDIUM] Removed computation: store i32 %v10, i32* %v5, align 4
+      + [MEDIUM] Removed computation: store i32 %v14, i32* %v2, align 4
+      + [MEDIUM] Removed computation: store i32 0, i32* %v2, align 4
+      + [MEDIUM] Removed computation: store i32* %v0, i32** %v1, align 8
+      + [HIGH] Arithmetic behavior modified
+      + [MEDIUM] Dependency chain expanded
+    - Memory Access Profile:
+      + Semantic Tag: Memory access increased
+      + Load Delta  : +1
+      + Store Delta : +1
+  --------------------------------------------------
+
+================================================================================
+                          END OF SEMANTIC REPORT                                
+================================================================================

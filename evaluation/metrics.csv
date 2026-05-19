@@ -1,0 +1,7 @@
+Test Case,Semantic Accuracy,Optimization Detection Accuracy,False Positives,CFG Detection,DFG Detection
+TC1 Refactoring,1.0,1.0,0,1.0,1.0
+TC2 Loop Bound,1.0,1.0,0,1.0,1.0
+TC3 Vectorization,1.0,0.8,0,1.0,1.0
+TC4 Inlining,1.0,1.0,0,1.0,1.0
+TC5 DCE,1.0,1.0,0,1.0,1.0
+TC6 Failure Case,0.8,0.5,0,0.8,0.8

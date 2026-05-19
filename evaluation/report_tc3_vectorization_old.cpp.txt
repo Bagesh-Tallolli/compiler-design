@@ -1,0 +1,67 @@
+================================================================================
+                    LLVM SEMANTIC DIFF ANALYZER REPORT                          
+================================================================================
+Old Source: tc3_vectorization_old.cpp
+New Source: tc3_vectorization_new.cpp
+--------------------------------------------------------------------------------
+1. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+  Overall Risk Level : LOW
+  Risk Explanation   : Low Risk: Safe refactorings, memory profile adjustments, or optimizations detected.
+
+  Function Statistics:
+    - Total Functions Analyzed : 1
+    - Unchanged Functions      : 0
+    - Changed Functions        : 1
+    - Added Functions          : 0
+    - Removed Functions        : 0
+
+  Semantic Classifications:
+    - Performance Optimization      : 1 function(s)
+
+  Optimization Summary:
+    - Optimizations Gained: None
+    - Optimizations Lost  : Dead Code Elimination (DCE), Loop Vectorization, Loop Unrolling, Constant Folding
+
+--------------------------------------------------------------------------------
+2. DETAILED FUNCTION ANALYSIS
+--------------------------------------------------------------------------------
+  * Function: @compute_vec
+    - Similarity Score    : 65.72727272727272%
+    - Change Category     : Performance Optimization
+    - Assigned Risk Level : Low
+    - Risk Explanation    : Compiler optimizations lost: Dead Code Elimination (DCE), Loop Unrolling, Constant Folding, Loop Vectorization.
+    - Performance Impact  : Negative (Regression)
+    - CFG Structural Changes:
+      + No structural control flow changes.
+    - Cyclomatic Complexity:
+      + Old: 2 (Loops: 1)
+      + New: 2 (Loops: 1)
+      + Delta: +0
+    - DFG Data Flow Changes:
+      + [MEDIUM] Added computation: %v20 = add nsw i32 %v19, 1
+      + [MEDIUM] Added computation: %v21 = load float*, float** %v3, align 8
+      + [MEDIUM] Added computation: %v23 = load i32, i32* %v6, align 4
+      + [MEDIUM] Added computation: %v24 = load float*, float** %v5, align 8
+      + [MEDIUM] Added computation: %v26 = load float, float* %v25, align 4
+      + [MEDIUM] Added computation: %v27 = load i32, i32* %v6, align 4
+      + [MEDIUM] Added computation: %v28 = icmp slt i32 %v27, 1024
+      + [MEDIUM] Added computation: %v29 = load i32, i32* %v6, align 4
+      + [MEDIUM] Added computation: %v30 = add nsw i32 %v29, 1
+      + [MEDIUM] Added computation: store float %v26, float* %v22, align 4
+      + [MEDIUM] Added computation: store i32 %v30, i32* %v6, align 4
+      + [MEDIUM] Removed computation: %v20 = icmp slt i32 %v19, 1024
+      + [MEDIUM] Removed computation: %v21 = load i32, i32* %v6, align 4
+      + [MEDIUM] Removed computation: %v22 = add nsw i32 %v21, 1
+      + [MEDIUM] Removed computation: store i32 %v22, i32* %v6, align 4
+      + [HIGH] Arithmetic behavior modified
+      + [MEDIUM] Dependency chain expanded
+    - Memory Access Profile:
+      + Semantic Tag: Memory access increased
+      + Load Delta  : +5
+      + Store Delta : +1
+  --------------------------------------------------
+
+================================================================================
+                          END OF SEMANTIC REPORT                                
+================================================================================
