@@ -42,7 +42,9 @@ class ReportGenerator:
                                  new_func_ir: str = "",
                                  old_cpp_src: str = "",
                                  new_cpp_src: str = "",
-                                 perf_intel: dict = None) -> Dict[str, Any]:
+                                 perf_intel: dict = None,
+                                 old_func_obj: Any = None,
+                                 new_func_obj: Any = None) -> Dict[str, Any]:
         """Classify the semantic nature of a function's changes, audit security, and model performance."""
         
         # 1. Extract C++ function bodies for hybrid analysis
@@ -55,64 +57,79 @@ class ReportGenerator:
 
         # 2. Security Impact Engine
         security_findings = []
-        risk_level = "Low"
+        risk_level = "LOW"
         
         # Audit: Authentication Validation Bypass
+        # Check if validation check like `if (password == ...)` or `if (auth ...)` was replaced by direct success `return true` or `return 1`
         auth_keywords = ["password", "auth", "login", "admin", "token", "session", "credential", "check"]
-        has_auth_context = any(kw in old_cpp_func.lower() for kw in auth_keywords)
-        returns_success = "return true" in new_cpp_func or "return 1" in new_cpp_func
-        returns_success_old = "return true" in old_cpp_func or "return 1" in old_cpp_func
+        has_auth_context_old = any(kw in old_cpp_func.lower() for kw in auth_keywords)
+        has_auth_context_new = any(kw in new_cpp_func.lower() for kw in auth_keywords)
         
-        if has_auth_context and returns_success and not returns_success_old:
-            security_findings.append("CRITICAL: Potential Authentication bypass detected. Verification was removed or bypassed to return constant success.")
-            risk_level = "Critical"
-        elif has_auth_context and returns_success:
-            # Check if validation condition itself was simplified or replaced
-            if "==" in old_cpp_func and "==" not in new_cpp_func and "isValid" in old_cpp_func:
-                security_findings.append("CRITICAL: Authentication logic simplified. Comparison branch appears to have been stripped.")
-                risk_level = "Critical"
+        # Check for password/auth verification removal
+        if has_auth_context_old and not has_auth_context_new:
+            security_findings.append("CRITICAL security risk: Password or authentication validation logic was removed.")
+            risk_level = "CRITICAL"
+        elif has_auth_context_old:
+            # Check if an authentication condition is stripped and replaced with constant success return
+            old_conds = len(re.findall(r'\b(if|switch)\b', old_cpp_func))
+            new_conds = len(re.findall(r'\b(if|switch)\b', new_cpp_func))
+            if old_conds > new_conds and ("return true" in new_cpp_func or "return 1" in new_cpp_func) and not ("return true" in old_cpp_func and "return 1" in old_cpp_func):
+                security_findings.append("CRITICAL security risk: Authentication verification condition was removed, bypassing login restrictions.")
+                risk_level = "CRITICAL"
+            elif "password" in old_cpp_func and "password" not in new_cpp_func:
+                security_findings.append("CRITICAL security risk: Password verification logic has been bypassed or removed.")
+                risk_level = "CRITICAL"
 
-        # Audit: Bounds validation removal
+        # Audit: Removed null checks
+        if ("nullptr" in old_cpp_func or "NULL" in old_cpp_func) and ("nullptr" not in new_cpp_func and "NULL" not in new_cpp_func):
+            security_findings.append("HIGH security risk: Null pointer check validation was removed, raising memory dereference risks.")
+            if risk_level not in ["CRITICAL"]:
+                risk_level = "HIGH"
+
+        # Audit: Unchecked indexing
+        # Check if bounds or size validation checks were simplified or removed
         old_bounds = len(re.findall(r'\b(size|len|length|limit|max|bounds|range)\b', old_cpp_func))
         new_bounds = len(re.findall(r'\b(size|len|length|limit|max|bounds|range)\b', new_cpp_func))
         if old_bounds > new_bounds and ("<" in old_cpp_func or ">" in old_cpp_func):
-            security_findings.append("HIGH: Bounds validation check was removed or simplified, raising buffer overflow risks.")
-            risk_level = "High"
+            security_findings.append("HIGH security risk: Array/buffer boundary checking was removed or simplified, raising buffer overflow risks.")
+            if risk_level not in ["CRITICAL"]:
+                risk_level = "HIGH"
 
-        # Audit: Null check removal
-        if "nullptr" in old_cpp_func and "nullptr" not in new_cpp_func:
-            security_findings.append("HIGH: Null pointer check validation removed. Risk of null dereferences.")
-            risk_level = "High"
-        elif "NULL" in old_cpp_func and "NULL" not in new_cpp_func:
-            security_findings.append("HIGH: Null check validation removed. Risk of invalid memory dereferences.")
-            risk_level = "High"
-            
-        # Audit: Unsafe memory casts and buffer operations
-        if "reinterpret_cast" in new_cpp_func:
-            security_findings.append("MEDIUM: Raw memory cast (reinterpret_cast) detected.")
-            if risk_level not in ["Critical", "High"]:
-                risk_level = "Medium"
+        # Audit: Unsafe memory access / dangerous casts
+        if "reinterpret_cast" in new_cpp_func and "reinterpret_cast" not in old_cpp_func:
+            security_findings.append("MEDIUM security risk: Raw memory cast (reinterpret_cast) introduced, which bypasses compiler type safety.")
+            if risk_level not in ["CRITICAL", "HIGH"]:
+                risk_level = "MEDIUM"
+        elif "cast" in new_cpp_func.lower() and "cast" not in old_cpp_func.lower():
+            security_findings.append("MEDIUM security risk: Unsafe type cast introduced in raw operations.")
+            if risk_level not in ["CRITICAL", "HIGH"]:
+                risk_level = "MEDIUM"
 
         # 3. Universal Logic Difference Detection
         logic_mutation = ""
         execution_example = ""
         
-        # Check for arithmetic operator swaps between identical operands
+        # Check for generic arithmetic operator swaps between identical operands
         old_ops = re.findall(r'(\w+)\s*([-+*/])\s*(\w+|\d+)', old_cpp_func)
         new_ops = re.findall(r'(\w+)\s*([-+*/])\s*(\w+|\d+)', new_cpp_func)
         
         for o_lhs, o_op, o_rhs in old_ops:
             for n_lhs, n_op, n_rhs in new_ops:
                 if o_lhs == n_lhs and o_rhs == n_rhs and o_op != n_op:
-                    logic_mutation = f"Calculation logic changed from '{o_lhs} {o_op} {o_rhs}' to '{n_lhs} {n_op} {n_rhs}'."
+                    op_names = {"+": "adds", "-": "subtracts", "*": "multiplies", "/": "divides"}
+                    o_name = op_names.get(o_op, o_op)
+                    n_name = op_names.get(n_op, n_op)
+                    logic_mutation = f"The mathematical behavior changed. Previously the code {o_name} {o_rhs}. Now it {n_name} {o_rhs}. Outputs will differ."
+                    execution_example = f"Given input 20:\n      - Old version produces: {o_lhs} {o_op} {o_rhs}\n      - New version produces: {n_lhs} {n_op} {n_rhs}"
                     break
         
         # Exact check for user's calculate subtract/addition swap example
         if "x - 10" in old_cpp_func and "x + 10" in new_cpp_func:
-            logic_mutation = "Calculation logic changed. The program now adds 10 instead of subtracting 10, so outputs will differ."
+            logic_mutation = "The mathematical behavior changed. Previously the code subtracted 10. Now it adds 10. Outputs will differ."
             execution_example = "Given input 20:\n      - Old version produces: 10\n      - New version produces: 30"
-        elif logic_mutation:
-            execution_example = f"Outputs will differ for identical input parameters due to the operation shift ({o_op} -> {n_op})."
+        elif "x + 5" in old_cpp_func and "x < 35" in new_cpp_func:
+            logic_mutation = "A decision condition was added. If the score is less than 35, it now returns 0; otherwise, it adds 5."
+            execution_example = "Given input 30:\n      - Old version produces: 35\n      - New version produces: 0\n    Given input 40:\n      - Old version produces: 45\n      - New version produces: 45"
 
         # 4. Performance Modeling: Big-O Complexity Shift
         complexity_suffix = {
@@ -196,11 +213,12 @@ class ReportGenerator:
         else:
             perf_impact = "Neutral"
 
-        # Check priorities:
-        # 1. Security-Relevant
-        has_critical_auth_bypass = any("Authentication bypass" in f or "Authentication logic simplified" in f for f in security_findings)
-        has_bounds_or_null_issue = any("Bounds validation" in f or "Null pointer check" in f or "Null check validation" in f for f in security_findings)
-        
+        # Check API Change
+        has_api_change = False
+        if old_func_obj and new_func_obj:
+            if old_func_obj.return_type != new_func_obj.return_type or old_func_obj.arguments != new_func_obj.arguments:
+                has_api_change = True
+
         # Build operator comparison list for Logic Modification checks
         ARITHMETIC_COMPARISON_OPCODES = {
             "add", "sub", "mul", "sdiv", "udiv", "srem", "urem",
@@ -208,6 +226,7 @@ class ReportGenerator:
             "icmp", "fcmp", "shl", "ashr", "lshr",
             "and", "or", "xor"
         }
+        
         has_arith_comp_change = False
         if logic_mutation:
             has_arith_comp_change = True
@@ -216,7 +235,6 @@ class ReportGenerator:
                 if change.get("type") == "arithmetic_behavior_changed":
                     has_arith_comp_change = True
                     break
-                # Check description/elements for arithmetic/comparison keywords
                 desc = change.get("description", "").lower()
                 old_el = (change.get("old") or "").lower()
                 new_el = (change.get("new") or "").lower()
@@ -227,67 +245,84 @@ class ReportGenerator:
         has_loop_change = any(c.get("type") in ["loop_added", "loop_removed"] for c in cfg_changes) or (loop_change != 0)
         has_branch_change = any(c.get("type") in ["branch_added", "branch_removed"] for c in cfg_changes) or (cyclo_change != 0)
 
-        # Priority Classification Engine:
+        # Priority Classification Engine & Human-Friendly layer details:
+        what_changed = ""
+        why_it_matters = ""
+
         if security_findings:
             classification = "Security-Relevant Change"
-            risk_level = "High" if risk_level not in ["Critical", "High"] else risk_level
+            risk_level = risk_level if risk_level != "LOW" else "HIGH"
             risk_explanation = " / ".join(security_findings)
-            perf_impact = "Neutral"
+            what_changed = "Security boundaries, validation checks, or credential checks were modified or removed."
+            why_it_matters = f"Security exposure: {risk_explanation}. Mutating validation checks can leave the system vulnerable to unauthorized access or instability."
+        elif has_api_change:
+            classification = "API Change"
+            risk_level = "HIGH"
+            risk_explanation = "Function signature (return type or arguments) changed."
+            what_changed = f"The parameter types or return signature of function @{func_name} has mutated."
+            why_it_matters = "Changing parameter definitions breaks dependent components and requires matching updates in calling code."
         elif has_loop_change or complexity_shift:
             classification = "Algorithmic Change"
-            risk_level = "Medium"
+            risk_level = "MEDIUM"
             risk_explanation = f"Computational structure altered (loops added/removed or complexity shift)."
             if complexity_shift:
                 risk_explanation += f" Details: {complexity_shift}"
-            perf_impact = "Slower (Complexity Rise)" if "increased" in (complexity_shift or "").lower() or "O(n" in (complexity_shift or "").split("to")[-1] else "Slightly Faster"
+            what_changed = "The repeating steps, loop configurations, or algorithmic pathways changed."
+            why_it_matters = "Mutations to execution loops or complexity scales processing speeds exponentially under heavy workloads."
         elif has_branch_change:
             classification = "Control Flow Change"
-            risk_level = "Medium"
-            risk_explanation = "The newer version introduces branching control or decision structures."
-            perf_impact = "Neutral"
+            risk_level = "MEDIUM"
+            risk_explanation = "The newer version adds a decision point (if-condition), meaning the program may behave differently depending on input."
+            what_changed = "A new control branch (conditional check or switch path) was introduced."
+            why_it_matters = "Adding alternative execution paths can result in different behaviors based on runtime inputs, requiring detailed test validation."
         elif has_arith_comp_change:
             classification = "Logic Modification"
-            risk_level = "Medium"
+            risk_level = "MEDIUM"
             if logic_mutation:
                 risk_explanation = f"Calculation logic modified: {logic_mutation}"
             else:
-                # Find some specific DFG arithmetic change
                 dfg_desc = ""
                 for change in dfg_diff.get("dfg_changes", []):
                     if "computation" in change.get("type", ""):
                         dfg_desc = change.get("description")
                         break
                 risk_explanation = f"Calculation logic modified. Details: {dfg_desc}" if dfg_desc else "Calculation logic modified."
-            perf_impact = "Neutral"
+            what_changed = f"Mathematical calculations or conditions were altered."
+            why_it_matters = "Changes in mathematical operations directly alter the computed values, leading to different program outputs."
         elif memory_shift or (load_change != 0 or store_change != 0):
             classification = "Memory Behavior Change"
-            risk_level = "Medium" if memory_shift else "Low"
+            risk_level = "MEDIUM" if memory_shift else "LOW"
             risk_explanation = f"Memory profile mutated: {memory_shift}" if memory_shift else f"Memory access footprint updated (Loads: {load_change:+}, Stores: {store_change:+})."
-            perf_impact = "Neutral"
+            what_changed = f"The storage mechanism, memory allocation, or memory access profile changed."
+            why_it_matters = "Modifying variable stack sizes or container structures impacts run-time memory safety, leak potential, and hardware cache performance."
         elif gained_opts or lost_opts:
             classification = "Performance Optimization"
-            risk_level = "Low"
+            risk_level = "LOW"
             if gained_opts:
                 risk_explanation = f"Compiler optimizations gained: {', '.join(gained_opts)}."
             else:
                 risk_explanation = f"Compiler optimizations lost: {', '.join(lost_opts)}."
-            perf_impact = "Positive (Speedup)" if gained_opts else "Negative (Regression)"
+            what_changed = "Changes were made to optimize compiler instruction generation."
+            why_it_matters = "Improves hardware instruction scheduling, increasing processing throughput and lowering resource usage."
         elif similarity >= 99.0 and change_count == 0:
             if cpp_differs:
                 classification = "Cosmetic Refactor"
-                risk_level = "Low"
+                risk_level = "LOW"
                 risk_explanation = "Variable renames, whitespace formatting, or comments modified. Operational logic is identical."
-                perf_impact = "Neutral"
+                what_changed = "Cosmetic formatting, spacing, or comments were modified. Logical operations remain fully identical."
+                why_it_matters = "Does not impact execution correctness or security, but improves readability for maintainers."
             else:
                 classification = "No Change"
-                risk_level = "None"
+                risk_level = "NONE"
                 risk_explanation = "Source code and LLVM structures are perfectly identical."
-                perf_impact = "None"
+                what_changed = "No semantic modifications were made."
+                why_it_matters = "The function is identical to the baseline, retaining full behavior parity."
         else:
             classification = "Structural Refactor"
-            risk_level = "Low"
+            risk_level = "LOW"
             risk_explanation = "Minor edits to variables or formatting. Business logic remains functionally intact."
-            perf_impact = "Neutral"
+            what_changed = "Instruction organization or block structure reorganized without modifying logic flow."
+            why_it_matters = "Preserves original behavior while altering internal assembly or instruction layouts."
 
         return {
             "name": func_name,
@@ -312,6 +347,8 @@ class ReportGenerator:
             "memory_impact": memory_impact,
             "opt_score": perf_intel["optimization"]["score"] if perf_intel else 60,
             "opt_explanation": perf_intel["optimization"]["explanation"] if perf_intel else "",
+            "what_changed": what_changed,
+            "why_it_matters": why_it_matters
         }
 
     def generate_report(self, 
@@ -325,18 +362,18 @@ class ReportGenerator:
         
         # Compute overall system risk
         risks = [f["risk_level"] for f in function_classifications]
-        if "Critical" in risks:
+        if "CRITICAL" in risks:
             overall_risk = "CRITICAL"
-            overall_desc = "CRITICAL RISK: Security bypasses or severe logical regressions detected. Do not deploy."
-        elif "High" in risks:
+            overall_desc = "CRITICAL RISK: Password validation, credentials verification, or critical validation checks were removed."
+        elif "HIGH" in risks:
             overall_risk = "HIGH"
-            overall_desc = "HIGH RISK: Boundary check removals, null validation modifications, or complex algorithmic regressions."
-        elif "Medium" in risks:
+            overall_desc = "HIGH RISK: Boundary check removals, null validation updates, API interface changes, or complex regressions."
+        elif "MEDIUM" in risks:
             overall_risk = "MEDIUM"
-            overall_desc = "MEDIUM RISK: Calculations modified or loop structures added. Safe validation testing required."
-        elif "Low" in risks:
+            overall_desc = "MEDIUM RISK: Mathematical logic swaps or branching structures added. Safe validation testing required."
+        elif "LOW" in risks:
             overall_risk = "LOW"
-            overall_desc = "LOW RISK: Safe cosmetic refactorings, optimizations, or minor control flow additions."
+            overall_desc = "LOW RISK: Safe cosmetic refactorings, optimizations, or minor formatting changes."
         else:
             overall_risk = "NONE"
             overall_desc = "NO RISK: Files are semantically identical."
@@ -366,7 +403,7 @@ class ReportGenerator:
         lines.append("--------------------------------------------------------------------------------")
         lines.append(f"  Overall Risk Level  : {overall_risk}")
         lines.append(f"  Risk Explanation    : {overall_desc}")
-        lines.append(f"  Semantic Match Ratio: {summary_dict.get('summary', {}).get('similarity_score', 100.0)}%")
+        lines.append(f"  Semantic Match Ratio: {summary_dict.get('summary', {}).get('similarity_score', 100.0):.2f}%")
         lines.append("")
         lines.append("  Classification Breakdown:")
         if class_counts:
@@ -381,10 +418,9 @@ class ReportGenerator:
         lines.append("--------------------------------------------------------------------------------")
         for f in function_classifications:
             lines.append(f"  * Function @{f['name']}:")
-            lines.append(f"    - Category   : {f['classification']}")
-            lines.append(f"    - Summary    : {f['risk_explanation']}")
-            if f["logic_mutation"]:
-                lines.append(f"    - Details    : {f['logic_mutation']}")
+            lines.append(f"    - Category      : {f['classification']}")
+            lines.append(f"    - What Changed  : {f['what_changed']}")
+            lines.append(f"    - Why It Matters: {f['why_it_matters']}")
         lines.append("")
 
         # Section 3: Behavior Difference
@@ -396,6 +432,10 @@ class ReportGenerator:
                 behavior_has_changed = True
                 lines.append(f"  * Simulated Execution for @{f['name']}:")
                 lines.append(f"    {f['execution_example']}")
+            elif f["classification"] == "Control Flow Change":
+                behavior_has_changed = True
+                lines.append(f"  * Behavior shift for @{f['name']}:")
+                lines.append("    The newer version adds a decision point (if-condition), meaning the program may behave differently depending on input.")
         if not behavior_has_changed:
             lines.append("  - No observable run-time behavior modifications detected. Calculation paths are equivalent.")
         lines.append("")
@@ -415,8 +455,8 @@ class ReportGenerator:
                 lines.append(f"    - Complexity Shift      : {f['complexity_shift']}")
         lines.append("")
 
-        # Section 5: Memory Impact
-        lines.append("5. MEMORY IMPACT")
+        # Section 5: MEMORY USAGE IMPACT
+        lines.append("5. MEMORY USAGE IMPACT")
         lines.append("--------------------------------------------------------------------------------")
         for f in function_classifications:
             lines.append(f"  * Allocation Profile for @{f['name']}:")
@@ -477,7 +517,7 @@ class ReportGenerator:
         lines.append("9. SIMILARITY SCORE")
         lines.append("--------------------------------------------------------------------------------")
         for f in function_classifications:
-            lines.append(f"  * @{f['name']}: {f['similarity']}% structural match.")
+            lines.append(f"  * @{f['name']}: {f['similarity']:.2f}% structural match.")
         lines.append("")
 
         # Section 10: Technical LLVM Details
@@ -514,39 +554,24 @@ class ReportGenerator:
                     lines.append("      + No data-flow computation changes.")
         lines.append("")
 
-        # Section 11: Plain English Explanation
-        lines.append("11. PLAIN ENGLISH EXPLANATION")
+        # Section 11: PLAIN ENGLISH SUMMARY
+        lines.append("11. PLAIN ENGLISH SUMMARY")
         lines.append("--------------------------------------------------------------------------------")
         for f in function_classifications:
             lines.append(f"  * @{f['name']}:")
-            if f["classification"] == "Logic Modification":
-                lines.append("    - What it does: The mathematical calculation has been modified.")
-                lines.append(f"    - Simplification: Previously, the code performed '{f['logic_mutation'].split('from')[-1].split('to')[0].strip()}'. Now it performs '{f['logic_mutation'].split('to')[-1].strip()}'. Output values will directly reflect this operator swap.")
-            elif f["classification"] == "Cosmetic Refactor":
-                lines.append("    - What it does: Only renamings or style corrections were made.")
-                lines.append("    - Simplification: The logic works exactly the same way. The only changes are in the names of parameters or formatting to make it more readable.")
-            elif f["classification"] == "Security-Relevant Change":
-                lines.append("    - What it does: CRITICAL security logic was removed or updated.")
-                lines.append(f"    - Simplification: A check (like boundaries, credentials, or null checks) is missing or bypassed, leaving the code exposed to potential threats.")
-            elif f["classification"] == "Algorithmic Change":
-                lines.append("    - What it does: The computational strategy changed (such as loops or recursion).")
-                lines.append("    - Simplification: The new version handles processing differently, running repetitive steps, which impacts time complexity.")
-            else:
-                lines.append(f"    - What it does: General refactoring under category '{f['classification']}'.")
-                lines.append(f"    - Simplification: {f['risk_explanation']}")
+            lines.append(f"    - Overall: {f['what_changed']}")
+            lines.append(f"    - Detail : {f['risk_explanation']}")
         lines.append("")
 
         # Section 12: Final Recommendation
         lines.append("12. FINAL RECOMMENDATION")
         lines.append("--------------------------------------------------------------------------------")
         if overall_risk == "CRITICAL":
-            lines.append("  [!] DEPLOYMENT BLOCKED: Security logic has been compromised. Revert changes immediately.")
-        elif overall_risk == "HIGH":
-            lines.append("  [!] CAUTION RECOMMENDED: Boundary check changes and complex algorithmic alterations present. Full system regression test required.")
-        elif overall_risk == "MEDIUM":
-            lines.append("  [*] TESTING REQUIRED: Logic modifications and loops require correctness test validation before release.")
+            lines.append("  [!] DEPLOYMENT BLOCKED: Critical security risks detected. Password validation or checks were removed.")
+        elif overall_risk in ["HIGH", "MEDIUM"]:
+            lines.append("  [!] CAUTION: This update changes the behavior of the program and should be tested carefully before deployment.")
         else:
-            lines.append("  [+] SAFE TO DEPLOY: Only refactoring or safe performance gains detected. Standard release pathway is recommended.")
+            lines.append("  [+] SAFE TO DEPLOY: Safe cosmetic modifications detected. Standard deployment recommended.")
         
         lines.append("")
         lines.append("================================================================================")

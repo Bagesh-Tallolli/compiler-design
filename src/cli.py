@@ -168,7 +168,9 @@ def run_compare(old_path: Path, new_path: Path, output_report_path: Path):
             old_func.raw_text, new_func.raw_text,
             old_path.read_text(encoding="utf-8", errors="ignore"),
             new_path.read_text(encoding="utf-8", errors="ignore"),
-            perf_intel
+            perf_intel,
+            old_func,
+            new_func
         )
         classifications.append(classification)
 
@@ -192,11 +194,12 @@ def run_compare(old_path: Path, new_path: Path, output_report_path: Path):
     print("================================================================================")
     
     # Calculate overall risk
-    risks = [c["risk_level"] for c in classifications]
-    overall_risk = "None"
-    if "High" in risks: overall_risk = "HIGH"
-    elif "Medium" in risks: overall_risk = "MEDIUM"
-    elif "Low" in risks: overall_risk = "LOW"
+    risks = [c["risk_level"].upper() for c in classifications]
+    overall_risk = "NONE"
+    if "CRITICAL" in risks: overall_risk = "CRITICAL"
+    elif "HIGH" in risks: overall_risk = "HIGH"
+    elif "MEDIUM" in risks: overall_risk = "MEDIUM"
+    elif "LOW" in risks: overall_risk = "LOW"
     
     print(f"Overall Risk    : {overall_risk}")
     print(f"Total Functions : {summary.total_functions()}")
