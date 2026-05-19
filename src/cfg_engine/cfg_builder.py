@@ -176,6 +176,8 @@ class CFGBuilder:
             stripped = line.strip()
             if not stripped:
                 continue
+            if stripped.startswith('{') or stripped.startswith('}'):
+                continue
 
             # Block label (ends with :)
             if stripped.endswith(':') and not stripped.startswith('!'):
@@ -183,7 +185,9 @@ class CFGBuilder:
                     blocks[current_block] = current_instructions
                 current_block = stripped[:-1]
                 current_instructions = []
-            elif current_block and not stripped.startswith('{') and not stripped.startswith('}'):
+            elif not stripped.startswith('!'):
+                if current_block is None:
+                    current_block = "entry"
                 current_instructions.append(stripped)
 
         if current_block:

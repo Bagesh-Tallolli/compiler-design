@@ -205,7 +205,7 @@ class CFGDiffEngine:
         if old_paths != new_paths:
             changes.append(CFGChange(
                 change_type='execution_path_changed',
-                description=f'Execution path structure changed ({len(old_paths)} → {len(new_paths)} paths)',
+                description=f'Execution path structure changed ({old_paths} → {new_paths} paths)',
                 impact_level='high',
             ))
 

@@ -5,9 +5,11 @@ class ComplexityAnalyzer:
     """Computes cyclomatic complexity and related metrics."""
 
     @staticmethod
-    def cyclomatic_complexity(node_count: int, edge_count: int, connected_components: int = 1) -> int:
+    def cyclomatic_complexity(node_count: int, edge_count: int, connected_components: int = 1, cfg=None) -> int:
         """
-        Compute cyclomatic complexity using: M = E - N + 2P
+        Compute cyclomatic complexity.
+        If cfg is provided, use decision counting for maximum accuracy.
+        Otherwise, fall back to E - N + 2P.
         
         Where:
         - E = edges
@@ -16,6 +18,21 @@ class ComplexityAnalyzer:
         
         Returns: complexity value
         """
+        if cfg is not None:
+            import re
+            decision_points = 0
+            for node in cfg.nodes.values():
+                for instr in node.instructions:
+                    # 1. Conditional branch
+                    if 'br i1' in instr:
+                        decision_points += 1
+                    # 2. Switch statement
+                    elif 'switch ' in instr:
+                        labels = re.findall(r'label\s+%\w+', instr)
+                        if len(labels) > 1:
+                            decision_points += (len(labels) - 1)
+            return 1 + decision_points
+
         if node_count == 0:
             return 1
         return edge_count - node_count + 2 * connected_components
@@ -31,6 +48,7 @@ class ComplexityAnalyzer:
         cyclo = ComplexityAnalyzer.cyclomatic_complexity(
             len(cfg.nodes),
             len(cfg.edges),
+            cfg=cfg
         )
         loop_bonus = ComplexityAnalyzer.loop_complexity_bonus(len(cfg.loops))
         return cyclo + loop_bonus
@@ -41,10 +59,12 @@ class ComplexityAnalyzer:
         old_cyclo = ComplexityAnalyzer.cyclomatic_complexity(
             len(old_cfg.nodes),
             len(old_cfg.edges),
+            cfg=old_cfg
         )
         new_cyclo = ComplexityAnalyzer.cyclomatic_complexity(
             len(new_cfg.nodes),
             len(new_cfg.edges),
+            cfg=new_cfg
         )
 
         old_total = ComplexityAnalyzer.total_complexity(old_cfg)

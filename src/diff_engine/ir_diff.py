@@ -54,6 +54,13 @@ class DiffSummary:
     removed_functions: List[FunctionDiff] = field(default_factory=list)
 
     def to_dict(self):
+        total_score = 0.0
+        match_count = 0
+        for f in self.changed_functions + self.unchanged_functions:
+            total_score += f.similarity_score
+            match_count += 1
+        avg_similarity = (total_score / match_count) if match_count > 0 else 100.0
+
         return {
             "changed": [f.to_dict() for f in self.changed_functions],
             "unchanged": [f.to_dict() for f in self.unchanged_functions],
@@ -65,6 +72,7 @@ class DiffSummary:
                 "unchanged_count": len(self.unchanged_functions),
                 "added_count": len(self.added_functions),
                 "removed_count": len(self.removed_functions),
+                "similarity_score": round(avg_similarity, 2),
             },
         }
 
@@ -138,8 +146,8 @@ class IRDiffEngine:
         # Calculate similarity
         similarity = self.scorer.composite_similarity(old_func, new_func)
 
-        # Determine status (use threshold of 95% for "unchanged")
-        status = 'unchanged' if similarity >= 95.0 else 'changed'
+        # Determine status (perfectly identical means unchanged, any change means changed)
+        status = 'unchanged' if similarity >= 100.0 else 'changed'
 
         # Diff instructions
         added_instr, removed_instr, modified_instr = self.scorer.instruction_diff(

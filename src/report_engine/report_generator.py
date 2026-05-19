@@ -169,7 +169,78 @@ class ReportGenerator:
         risk_explanation = "Minor edits to variables or formatting. Business logic remains functionally intact."
         perf_impact = "Neutral"
 
-        if similarity >= 99.5 and change_count == 0:
+        # Identify arithmetic / comparison / logic ops changes in DFG
+        ARITHMETIC_COMPARISON_OPCODES = {
+            "add", "sub", "mul", "sdiv", "udiv", "srem", "urem",
+            "fadd", "fsub", "fmul", "fdiv", "frem",
+            "icmp", "fcmp", "shl", "ashr", "lshr",
+            "and", "or", "xor"
+        }
+        has_arith_comp_change = False
+        if logic_mutation:
+            has_arith_comp_change = True
+        else:
+            for change in dfg_diff.get("dfg_changes", []):
+                if change.get("type") == "arithmetic_behavior_changed":
+                    has_arith_comp_change = True
+                    break
+                # Check description/elements for arithmetic/comparison keywords
+                desc = change.get("description", "").lower()
+                old_el = (change.get("old") or "").lower()
+                new_el = (change.get("new") or "").lower()
+                if any(op in desc or op in old_el or op in new_el for op in ARITHMETIC_COMPARISON_OPCODES):
+                    has_arith_comp_change = True
+                    break
+
+        has_loop_change = any(c.get("type") in ["loop_added", "loop_removed"] for c in cfg_changes) or (loop_change != 0)
+        has_branch_change = any(c.get("type") in ["branch_added", "branch_removed"] for c in cfg_changes) or (cyclo_change != 0)
+
+        # Priority Classification Engine:
+        if security_findings:
+            classification = "Security-Relevant Change"
+            risk_level = "High" if risk_level not in ["Critical", "High"] else risk_level
+            risk_explanation = " / ".join(security_findings)
+            perf_impact = "Neutral"
+        elif has_loop_change or complexity_shift:
+            classification = "Algorithmic Change"
+            risk_level = "Medium"
+            risk_explanation = f"Computational structure altered (loops added/removed or complexity shift)."
+            if complexity_shift:
+                risk_explanation += f" Details: {complexity_shift}"
+            perf_impact = "Slower (Complexity Rise)" if "increased" in (complexity_shift or "").lower() or "O(n" in (complexity_shift or "").split("to")[-1] else "Slightly Faster"
+        elif has_branch_change:
+            classification = "Control Flow Change"
+            risk_level = "Medium"
+            risk_explanation = "The newer version introduces branching control or decision structures."
+            perf_impact = "Neutral"
+        elif has_arith_comp_change:
+            classification = "Logic Modification"
+            risk_level = "Medium"
+            if logic_mutation:
+                risk_explanation = f"Calculation logic modified: {logic_mutation}"
+            else:
+                # Find some specific DFG arithmetic change
+                dfg_desc = ""
+                for change in dfg_diff.get("dfg_changes", []):
+                    if "computation" in change.get("type", ""):
+                        dfg_desc = change.get("description")
+                        break
+                risk_explanation = f"Calculation logic modified. Details: {dfg_desc}" if dfg_desc else "Calculation logic modified."
+            perf_impact = "Neutral"
+        elif memory_shift or (load_change != 0 or store_change != 0):
+            classification = "Memory Behavior Change"
+            risk_level = "Medium" if memory_shift else "Low"
+            risk_explanation = f"Memory profile mutated: {memory_shift}" if memory_shift else f"Memory access footprint updated (Loads: {load_change:+}, Stores: {store_change:+})."
+            perf_impact = "Neutral"
+        elif gained_opts or lost_opts:
+            classification = "Performance Optimization"
+            risk_level = "Low"
+            if gained_opts:
+                risk_explanation = f"Compiler optimizations gained: {', '.join(gained_opts)}."
+            else:
+                risk_explanation = f"Compiler optimizations lost: {', '.join(lost_opts)}."
+            perf_impact = "Positive (Speedup)" if gained_opts else "Negative (Regression)"
+        elif similarity >= 99.0 and change_count == 0:
             if cpp_differs:
                 classification = "Cosmetic Refactor"
                 risk_level = "Low"
@@ -180,42 +251,10 @@ class ReportGenerator:
                 risk_level = "None"
                 risk_explanation = "Source code and LLVM structures are perfectly identical."
                 perf_impact = "None"
-        elif risk_level in ["Critical", "High"] or security_findings:
-            classification = "Security-Relevant Change"
-            risk_explanation = " / ".join(security_findings) if security_findings else "Risky memory, auth, or boundary check manipulation."
-            perf_impact = "Neutral"
-        elif gained_opts or lost_opts:
-            classification = "Performance Optimization"
+        else:
+            classification = "Structural Refactor"
             risk_level = "Low"
-            if gained_opts:
-                risk_explanation = f"Compiler optimizations gained: {', '.join(gained_opts)}."
-            else:
-                risk_explanation = f"Compiler optimizations lost: {', '.join(lost_opts)}."
-            perf_impact = "Positive (Speedup)" if gained_opts else "Negative (Regression)"
-        elif complexity_shift:
-            classification = "Algorithmic Change"
-            risk_level = "Medium"
-            risk_explanation = f"Computational structure altered: {complexity_shift}."
-            perf_impact = "Slower (Complexity Rise)" if "increased" in complexity_shift.lower() or "O(n" in complexity_shift.split("to")[-1] else "Slightly Faster"
-        elif memory_shift:
-            classification = "Memory Behavior Change"
-            risk_level = "Medium"
-            risk_explanation = f"Memory profile mutated: {memory_shift}"
-            perf_impact = "Neutral"
-        elif logic_mutation:
-            classification = "Logic Modification"
-            risk_level = "Medium"
-            risk_explanation = f"Calculation logic modified: {logic_mutation}"
-            perf_impact = "Neutral"
-        elif cyclo_change != 0 or loop_change != 0 or any(c.get("type") in ["branch_added", "branch_removed", "loop_added", "loop_removed"] for c in cfg_changes):
-            classification = "Control Flow Change"
-            risk_level = "Low"
-            risk_explanation = "The newer version introduces branching control or decision structures."
-            perf_impact = "Neutral"
-        elif load_change != 0 or store_change != 0:
-            classification = "Memory Behavior Change"
-            risk_level = "Low"
-            risk_explanation = f"Memory access footprint updated (Loads: {load_change:+}, Stores: {store_change:+})."
+            risk_explanation = "Minor edits to variables or formatting. Business logic remains functionally intact."
             perf_impact = "Neutral"
 
         return {

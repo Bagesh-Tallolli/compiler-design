@@ -2,8 +2,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
-
-ARITHMETIC_OPS = {"add", "sub", "mul", "sdiv", "udiv", "srem", "urem"}
+ARITHMETIC_OPS = {
+    "add", "sub", "mul", "sdiv", "udiv", "srem", "urem",
+    "fadd", "fsub", "fmul", "fdiv", "frem",
+    "shl", "lshr", "ashr"
+}
 MEMORY_OPS = {"load", "store", "alloca", "memcpy", "memmove"}
 LOGIC_OPS = {"and", "or", "xor", "icmp", "fcmp"}
 FUNCTION_OPS = {"call", "invoke"}

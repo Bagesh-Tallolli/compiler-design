@@ -134,6 +134,8 @@ class FunctionMapper:
             stripped = line.strip()
             if not stripped:
                 continue
+            if stripped.startswith('{') or stripped.startswith('}'):
+                continue
 
             # Block label (ends with :)
             if stripped.endswith(':') and not stripped.startswith('!'):
@@ -141,7 +143,9 @@ class FunctionMapper:
                     blocks.append(current_block)
                 label = stripped[:-1]
                 current_block = BasicBlock(label=label)
-            elif current_block and stripped and not stripped.startswith('}') and not stripped.startswith('{'):
+            elif not stripped.startswith('!'):
+                if current_block is None:
+                    current_block = BasicBlock(label="entry")
                 current_block.instructions.append(stripped)
 
         if current_block:
