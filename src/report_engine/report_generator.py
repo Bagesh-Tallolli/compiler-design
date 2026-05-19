@@ -41,7 +41,8 @@ class ReportGenerator:
                                  old_func_ir: str = "",
                                  new_func_ir: str = "",
                                  old_cpp_src: str = "",
-                                 new_cpp_src: str = "") -> Dict[str, Any]:
+                                 new_cpp_src: str = "",
+                                 perf_intel: dict = None) -> Dict[str, Any]:
         """Classify the semantic nature of a function's changes, audit security, and model performance."""
         
         # 1. Extract C++ function bodies for hybrid analysis
@@ -114,42 +115,65 @@ class ReportGenerator:
             execution_example = f"Outputs will differ for identical input parameters due to the operation shift ({o_op} -> {n_op})."
 
         # 4. Performance Modeling: Big-O Complexity Shift
-        old_loop_keywords = re.findall(r'\b(for|while)\b', old_cpp_func)
-        new_loop_keywords = re.findall(r'\b(for|while)\b', new_cpp_func)
+        complexity_suffix = {
+            "O(1)": "O(1) [Constant Time]",
+            "O(log n)": "O(log n) [Logarithmic Time]",
+            "O(n)": "O(n) [Linear Time]",
+            "O(n²)": "O(n²) [Quadratic Time]"
+        }
         
-        old_complexity = "O(1) [Constant Time]"
-        if len(old_loop_keywords) == 1:
-            old_complexity = "O(n) [Linear Time]"
-        elif len(old_loop_keywords) >= 2:
-            old_complexity = "O(n²) [Quadratic Time]"
+        if perf_intel:
+            old_c_raw = perf_intel["complexity"]["old"]
+            new_c_raw = perf_intel["complexity"]["new"]
+            old_complexity = complexity_suffix.get(old_c_raw, f"{old_c_raw} [Constant Time]")
+            new_complexity = complexity_suffix.get(new_c_raw, f"{new_c_raw} [Constant Time]")
+            complexity_shift = ""
+            if old_c_raw != new_c_raw:
+                complexity_shift = perf_intel["complexity"]["complexity_shift"]
+        else:
+            old_loop_keywords = re.findall(r'\b(for|while)\b', old_cpp_func)
+            new_loop_keywords = re.findall(r'\b(for|while)\b', new_cpp_func)
             
-        new_complexity = "O(1) [Constant Time]"
-        if len(new_loop_keywords) == 1:
-            new_complexity = "O(n) [Linear Time]"
-        elif len(new_loop_keywords) >= 2:
-            new_complexity = "O(n²) [Quadratic Time]"
+            old_complexity = "O(1) [Constant Time]"
+            if len(old_loop_keywords) == 1:
+                old_complexity = "O(n) [Linear Time]"
+            elif len(old_loop_keywords) >= 2:
+                old_complexity = "O(n²) [Quadratic Time]"
+                
+            new_complexity = "O(1) [Constant Time]"
+            if len(new_loop_keywords) == 1:
+                new_complexity = "O(n) [Linear Time]"
+            elif len(new_loop_keywords) >= 2:
+                new_complexity = "O(n²) [Quadratic Time]"
+                
+            complexity_shift = ""
+            if old_complexity != new_complexity:
+                complexity_shift = f"Time complexity shifted from {old_complexity} to {new_complexity}."
             
-        complexity_shift = ""
-        if old_complexity != new_complexity:
-            complexity_shift = f"Time complexity shifted from {old_complexity} to {new_complexity}."
-        
-        # Recursion audit
-        if f"{func_name}(" in new_cpp_func and f"{func_name}(" not in old_cpp_func:
-            complexity_shift = f"Recursive pathway introduced in new code, mutating complexity profiles."
+            # Recursion audit
+            if f"{func_name}(" in new_cpp_func and f"{func_name}(" not in old_cpp_func:
+                complexity_shift = f"Recursive pathway introduced in new code, mutating complexity profiles."
 
         # 5. Memory Behavior Changes
-        old_heap = ("malloc" in old_cpp_func or "new " in old_cpp_func or "calloc" in old_cpp_func)
-        new_heap = ("malloc" in new_cpp_func or "new " in new_cpp_func or "calloc" in new_cpp_func)
-        old_vector = ("vector" in old_cpp_func or "array" in old_cpp_func)
-        new_vector = ("vector" in new_cpp_func or "array" in new_cpp_func)
-        
-        memory_shift = ""
-        if not old_heap and new_heap:
-            memory_shift = "Dynamic heap allocation introduced (new/malloc usage)."
-        elif not old_vector and new_vector:
-            memory_shift = "Container allocation introduced (std::vector / std::array / C-style array)."
-        elif old_vector and not new_vector:
-            memory_shift = "Container storage removed, stack allocation preferred."
+        if perf_intel:
+            memory_shift = perf_intel["memory"]["explanation"]
+            memory_impact = perf_intel["memory"]["impact"]
+        else:
+            old_heap = ("malloc" in old_cpp_func or "new " in old_cpp_func or "calloc" in old_cpp_func)
+            new_heap = ("malloc" in new_cpp_func or "new " in new_cpp_func or "calloc" in new_cpp_func)
+            old_vector = ("vector" in old_cpp_func or "array" in old_cpp_func)
+            new_vector = ("vector" in new_cpp_func or "array" in new_cpp_func)
+            
+            memory_shift = ""
+            if not old_heap and new_heap:
+                memory_shift = "Dynamic heap allocation introduced (new/malloc usage)."
+            elif not old_vector and new_vector:
+                memory_shift = "Container allocation introduced (std::vector / std::array / C-style array)."
+            elif old_vector and not new_vector:
+                memory_shift = "Container storage removed, stack allocation preferred."
+            memory_impact = "Similar Memory"
+            if memory_shift:
+                memory_impact = "Increased Memory"
 
         # 6. Technical CFG/DFG Metrics
         cfg_changes = cfg_diff.get("changes", [])
@@ -166,10 +190,18 @@ class ReportGenerator:
         # 7. Advanced Change Classification Engine
         cpp_differs = (old_cpp_func.strip() != new_cpp_func.strip())
         classification = "Structural Refactor"
-        risk_explanation = "Minor edits to variables or formatting. Business logic remains functionally intact."
-        perf_impact = "Neutral"
+        
+        if perf_intel:
+            perf_impact = perf_intel["speed"]["impact"]
+        else:
+            perf_impact = "Neutral"
 
-        # Identify arithmetic / comparison / logic ops changes in DFG
+        # Check priorities:
+        # 1. Security-Relevant
+        has_critical_auth_bypass = any("Authentication bypass" in f or "Authentication logic simplified" in f for f in security_findings)
+        has_bounds_or_null_issue = any("Bounds validation" in f or "Null pointer check" in f or "Null check validation" in f for f in security_findings)
+        
+        # Build operator comparison list for Logic Modification checks
         ARITHMETIC_COMPARISON_OPCODES = {
             "add", "sub", "mul", "sdiv", "udiv", "srem", "urem",
             "fadd", "fsub", "fmul", "fdiv", "frem",
@@ -275,6 +307,11 @@ class ReportGenerator:
             "new_complexity": new_complexity,
             "old_cpp_func": old_cpp_func,
             "new_cpp_func": new_cpp_func,
+            "execution_speed_impact": perf_intel["speed"]["impact"] if perf_intel else perf_impact,
+            "speed_explanation": perf_intel["speed"]["explanation"] if perf_intel else "",
+            "memory_impact": memory_impact,
+            "opt_score": perf_intel["optimization"]["score"] if perf_intel else 60,
+            "opt_explanation": perf_intel["optimization"]["explanation"] if perf_intel else "",
         }
 
     def generate_report(self, 
@@ -368,9 +405,12 @@ class ReportGenerator:
         lines.append("--------------------------------------------------------------------------------")
         for f in function_classifications:
             lines.append(f"  * Complexity analysis for @{f['name']}:")
+            lines.append(f"    - Execution Speed Impact: {f.get('execution_speed_impact', f['performance_impact'])}")
             lines.append(f"    - Execution Speed Class : {f['performance_impact']}")
             lines.append(f"    - Baseline Complexity   : {f['old_complexity']}")
             lines.append(f"    - Upgraded Complexity   : {f['new_complexity']}")
+            if f.get("speed_explanation"):
+                lines.append(f"    - Speed Explanation     : {f['speed_explanation']}")
             if f["complexity_shift"]:
                 lines.append(f"    - Complexity Shift      : {f['complexity_shift']}")
         lines.append("")
@@ -380,6 +420,7 @@ class ReportGenerator:
         lines.append("--------------------------------------------------------------------------------")
         for f in function_classifications:
             lines.append(f"  * Allocation Profile for @{f['name']}:")
+            lines.append(f"    - Memory Impact          : {f.get('memory_impact', 'Similar Memory')}")
             if f["memory_shift"]:
                 lines.append(f"    - Memory Shift          : {f['memory_shift']}")
             
@@ -396,6 +437,12 @@ class ReportGenerator:
         # Section 6: Compiler Optimization Impact
         lines.append("6. COMPILER OPTIMIZATION IMPACT")
         lines.append("--------------------------------------------------------------------------------")
+        for f in function_classifications:
+            if "opt_score" in f:
+                lines.append(f"  * Optimization analysis for @{f['name']}:")
+                lines.append(f"    - Compiler Optimization Score: {f['opt_score']}/100")
+                lines.append(f"    - Optimization Explanation    : {f['opt_explanation']}")
+                lines.append("")
         if total_gained or total_lost:
             if total_gained:
                 lines.append(f"  - Optimizations Gained: {', '.join(set(total_gained))}")

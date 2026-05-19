@@ -95,6 +95,8 @@ def run_compare(old_path: Path, new_path: Path, output_report_path: Path):
     dfg_diff_engine = DFGDiffEngine()
     opt_detector = OptimizationDetector()
     report_gen = ReportGenerator()
+    from src.performance_engine.performance_analyzer import PerformanceIntelligenceEngine
+    perf_analyzer = PerformanceIntelligenceEngine()
 
     # 4. CFG, DFG, Optimization and Classification Analysis
     print("[*] Analyzing structural control flow and data flow...")
@@ -147,9 +149,26 @@ def run_compare(old_path: Path, new_path: Path, output_report_path: Path):
             dfg_diff.to_dict()
         )
 
+        # Performance Analysis
+        perf_intel = perf_analyzer.analyze_performance(
+            name,
+            old_func.raw_text,
+            new_func.raw_text,
+            old_cfg,
+            new_cfg,
+            old_dfg,
+            new_dfg,
+            old_o3_ir,
+            new_o3_ir
+        )
+
         # Classification
         classification = report_gen.classify_function_change(
-            name, similarity, cfg_diff.to_dict(), dfg_diff.to_dict(), gained, lost
+            name, similarity, cfg_diff.to_dict(), dfg_diff.to_dict(), gained, lost,
+            old_func.raw_text, new_func.raw_text,
+            old_path.read_text(encoding="utf-8", errors="ignore"),
+            new_path.read_text(encoding="utf-8", errors="ignore"),
+            perf_intel
         )
         classifications.append(classification)
 
